@@ -4,11 +4,14 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using SharpRemote.Extensions;
 using SharpRemote.Hosting;
+using log4net;
 
 namespace SharpRemote
 {
 	internal static class NativeMethods
 	{
+		private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
 		[Flags]
 		public enum ErrorModes : uint
 		{
@@ -88,22 +91,82 @@ namespace SharpRemote
 
 		#region Postmortem debugging
 
-		[DllImport(PostmortdemDebuggerDll, SetLastError = true, CharSet = CharSet.Unicode,
-			CallingConvention = CallingConvention.Cdecl)]
+		[DllImport(PostmortdemDebuggerDll,
+			SetLastError = true,
+			CharSet = CharSet.Unicode,
+			CallingConvention = CallingConvention.Cdecl,
+			EntryPoint = "InitDumpCollection")]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		public static extern bool InitDumpCollection(
+		private static extern bool _initDumpCollection(
 			int numRetainedMinidumps,
 			string dumpFolder,
 			string dumpName
 			);
 
-		[DllImport(PostmortdemDebuggerDll, SetLastError = true, CallingConvention = CallingConvention.Cdecl)]
+		public static bool InitDumpCollection(
+			int numRetainedMinidumps,
+			string dumpFolder,
+			string dumpName
+			)
+		{
+			try
+			{
+				if (!_initDumpCollection(numRetainedMinidumps, dumpFolder, dumpName))
+				{
+					int err = Marshal.GetLastWin32Error();
+					Log.ErrorFormat("Unable to initialize the post-mortem debugger: {0}", err);
+					return false;
+				}
+
+				return true;
+			}
+			catch (Exception e)
+			{
+				Log.ErrorFormat("Unable to initialize the post-mortem debugger: {0}", e);
+				return false;
+			}
+		}
+
+		[DllImport(PostmortdemDebuggerDll,
+			SetLastError = true,
+			CallingConvention = CallingConvention.Cdecl,
+			EntryPoint = "InstallPostmortemDebugger")]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		public static extern bool InstallPostmortemDebugger(bool suppressErrorWindows,
+		private static extern bool _installPostmortemDebugger(bool suppressErrorWindows,
 		                                                    bool interceptUnhandledExceptions,
 		                                                    bool handleCrtAsserts,
 		                                                    bool handleCrtPurecalls,
 		                                                    CRuntimeVersions crtVersions);
+
+		public static bool InstallPostmortemDebugger(bool suppressErrorWindows,
+		                                             bool interceptUnhandledExceptions,
+		                                             bool handleCrtAsserts,
+		                                             bool handleCrtPurecalls,
+		                                             CRuntimeVersions crtVersions)
+		{
+			try
+			{
+				if (!_installPostmortemDebugger(suppressErrorWindows,
+				                                interceptUnhandledExceptions,
+				                                handleCrtAsserts,
+				                                handleCrtPurecalls,
+				                                crtVersions))
+				{
+					int err = Marshal.GetLastWin32Error();
+					Log.ErrorFormat("Unable to install the post-mortem debugger for unhandled exceptions: {0}",
+									err);
+					return false;
+				}
+
+				return true;
+			}
+			catch (Exception e)
+			{
+				Log.ErrorFormat("Unable to install the post-mortem debugger for unhandled exceptions: {0}",
+									e);
+				return false;
+			}
+		}
 
 		[DllImport(PostmortdemDebuggerDll, SetLastError = true, CharSet = CharSet.Unicode,
 			CallingConvention = CallingConvention.Cdecl)]
